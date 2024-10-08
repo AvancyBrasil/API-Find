@@ -1,0 +1,28 @@
+//terminal da pasta api
+npm init -y
+npm i express
+npm install prisma --save-dev
+npx prisma init
+
+
+//subistituir no arquivo env 
+DATABASE_URL="mongodb+srv://otaviorrodrigues:Xf1VlZJLuDTslKIn@usuarios.c635h.mongodb.net/Usuarios?retryWrites=true&w=majority&appName=Usuarios"
+
+
+npx prisma db push
+npm install @prisma/client
+npm install cors
+npm install multer
+
+
+//rodar o server um dos dois abaixo
+node --watch server.js
+ 
+//abra outro terminal
+npx prisma studio
+//o comando acima abre para vizualizar o banco de dados 
+
+
+
+
+
