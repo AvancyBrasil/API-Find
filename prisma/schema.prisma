@@ -33,20 +33,18 @@ model Lojista {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   nome         String
   sobrenome    String
-  cpf          String
-  dataNasc     String
   nomeEmpresa  String
   cnpj         String
   cep	         String?
   logradouro	 String?
   cidade	     String?
-  bairro	     String?
+  estado	     String?
   numEstab     String?
-  complemento	 String?
-  numcontato   String?
   email        String   @unique
   senha        String
   produtos     Produto[]
+  latitude     Float?
+  longitude    Float?
   tipo         String   @default("lojista")
 }
 
@@ -54,8 +52,9 @@ model Lojista {
 model Produto {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   nome          String
+  preco         String?
   descricao     String?
-  imagemProduto String
+  imagemProduto String?
   idLojista     String   @db.ObjectId
   lojista       Lojista  @relation(fields: [idLojista], references: [id])
   @@index([idLojista])
