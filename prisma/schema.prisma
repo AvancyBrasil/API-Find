@@ -31,18 +31,20 @@ model User {
   
 model Lojista {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  imagemLojista String?
   nome         String
   sobrenome    String
   nomeEmpresa  String
   cnpj         String
-  cep	         String?
-  logradouro	 String?
-  cidade	     String?
-  estado	     String?
+  cep          String?
+  logradouro   String?
+  cidade       String?
+  estado       String?
+  numContato   String?
   numEstab     String?
   email        String   @unique
   senha        String
-  produtos     Produto[]
+  produtos     Produto[] @relation("LojistaProdutos")
   latitude     Float?
   longitude    Float?
   tipo         String   @default("lojista")
@@ -56,6 +58,6 @@ model Produto {
   descricao     String?
   imagemProduto String?
   idLojista     String   @db.ObjectId
-  lojista       Lojista  @relation(fields: [idLojista], references: [id])
+  lojista       Lojista  @relation("LojistaProdutos", fields: [idLojista], references: [id], onDelete: Cascade)
   @@index([idLojista])
 }

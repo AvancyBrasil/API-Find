@@ -4,17 +4,21 @@ import { PrismaClient } from '@prisma/client'
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import fetch from 'node-fetch'; // Importa o fetch para Node.js
+import fetch from 'node-fetch'; 
 import geolib from 'geolib';
 
-// Definição do caminho da pasta uploads
-const uploadsDir = path.resolve('uploads'); // Usa o diretório atual
 
-// Criação da pasta uploads se não existir
+const uploadsDir = path.resolve('uploads'); 
+const imagesDir = path.resolve('imagens');
+
+
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
+if (!fs.existsSync(imagesDir)) {
+  fs.mkdirSync(imagesDir);
+}
 const prisma = new PrismaClient()
 
  const app = express()
@@ -23,23 +27,30 @@ const prisma = new PrismaClient()
 
  const usuarios = []
 
-// Configuração do Multer para upload de imagens
+
 app.use('/uploads', express.static(uploadsDir));
-
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, uploadsDir); // Pasta onde as imagens serão salvas
-    },
-    filename: function (req, file, cb) {
-      cb(null, Date.now() + path.extname(file.originalname)); // Renomeia a imagem com timestamp
-    }
-  });
-  
-  const upload = multer({ storage });
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname)); 
+  }
+});
+const upload = multer({ storage });
 
+app.use('/imagens', express.static(imagesDir));
+const imagesStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, imagesDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+const uploadImages = multer({ storage: imagesStorage });
   //Usuarios
   
-  // Criação de um usuário com upload de fotoPerfil
   app.post('/usuarios', upload.single('fotoPerfil'), async (req, res) => {
     const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
     const fotoPerfil = req.file ? req.file.filename : null;
@@ -67,16 +78,15 @@ const storage = multer.diskStorage({
     }
   });
   
-  // Atualização de um usuário com a opção de alterar a fotoPerfil
   app.put('/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
-    console.log('Corpo da requisição:', req.body); // Verifique os dados recebidos
-    console.log('Arquivo recebido:', req.file); // Verifique o arquivo recebido
+    console.log('Corpo da requisição:', req.body); 
+    console.log('Arquivo recebido:', req.file); 
   
     
     const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
-    const fotoPerfil = req.file ? req.file.filename : undefined; // Verifique se fotoPerfil está correto
+    const fotoPerfil = req.file ? req.file.filename : undefined; 
   
-    console.log('Foto perfil:', fotoPerfil); // Verifique se a variável está sendo atribuída corretamente
+    console.log('Foto perfil:', fotoPerfil); 
   
     try {
       const usuarioAtualizado = await prisma.user.update({
@@ -210,7 +220,7 @@ const obterCoordenadas = async (logradouro, cidade, estado) => {
 //lojista
 
 app.post('/lojistas', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numcontato, email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha } = req.body;
 
   try {
     // Obtenha a latitude e longitude usando a função
@@ -232,7 +242,7 @@ app.post('/lojistas', async (req, res) => {
         estado,
         numEstab,
         complemento,
-        numcontato,
+        numContato,
         email,
         senha,
         latitude,
@@ -270,7 +280,7 @@ app.get('/lojistas', async (req, res) => {
 
 // Rota para atualizar um lojista
 app.put('/lojistas/:id', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numcontato, email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha } = req.body;
 
   try {
     // Verifique se algum campo de endereço foi alterado
@@ -299,7 +309,7 @@ app.put('/lojistas/:id', async (req, res) => {
         estado,
         numEstab,
         complemento,
-        numcontato,
+        numContato,
         email,
         senha,
         latitude,   // Atualiza a latitude, se recalculada
@@ -392,14 +402,16 @@ app.get('/produtos', async (req, res) => {
 });
 
 
-app.post('/produtos', async (req, res) => {
+app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => {
   try {
-    const { nome, descricao, idLojista, imagemProduto } = req.body;
+    const { nome, descricao, preco, idLojista } = req.body;
+    const imagemProduto = req.file ? req.file.filename : null; 
 
     const novoProduto = await prisma.produto.create({
       data: {
         nome,
         descricao,
+        preco,
         idLojista,
         imagemProduto
       }
@@ -408,7 +420,7 @@ app.post('/produtos', async (req, res) => {
     res.status(201).json({
       message: "Produto novo adicionado com sucesso",
       novoProduto
-  });
+    });
   } catch (error) {
     console.error('Erro ao criar produto:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -418,13 +430,14 @@ app.post('/produtos', async (req, res) => {
 app.put('/produtos/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, descricao, idLojista, imagemProduto } = req.body;
+    const { nome, descricao,preco, idLojista, imagemProduto } = req.body;
 
     const produtoAtualizado = await prisma.produto.update({
       where: { id: id },
       data: {
         nome,
         descricao,
+        preco,
         idLojista,
         imagemProduto
       }
