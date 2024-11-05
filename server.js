@@ -6,7 +6,11 @@ import path from 'path';
 import fs from 'fs';
 import fetch from 'node-fetch'; 
 import geolib from 'geolib';
+import { MongoClient } from 'mongodb';
+import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
+dotenv.config()
 
 const uploadsDir = path.resolve('uploads'); 
 const imagesDir = path.resolve('imagens');
@@ -194,6 +198,32 @@ app.get('/usuarios', async (req, res) => {
     }
 });
 
+//função banir
+app.put('/usuarios/:id/banir', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body; // Espera um valor booleano para definir o status
+
+  // Verifica se o status é um booleano
+  if (typeof status !== 'boolean') {
+    return res.status(400).json({ message: 'O campo "status" deve ser um valor booleano (true para ativo, false para banido).' });
+  }
+
+  try {
+    const usuario = await prisma.user.update({
+      where: { id: id },
+      data: { status: status }, // Atualiza o status diretamente para o valor recebido
+    });
+
+    res.status(200).json({
+      message: status ? 'Usuário ativado com sucesso!' : 'Usuário banido com sucesso!',
+      usuario,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar status do usuário:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
 //geolocalização 
 // Função para obter latitude e longitude
 const obterCoordenadas = async (logradouro, cidade, estado) => {
@@ -220,13 +250,12 @@ const obterCoordenadas = async (logradouro, cidade, estado) => {
 //lojista
 
 app.post('/lojistas', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha,categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
 
   try {
     // Obtenha a latitude e longitude usando a função
     const estado = req.body.estado || ''; // Inclua o estado se necessário
     const { latitude, longitude } = await obterCoordenadas(logradouro, cidade, estado);
-
     // Crie o lojista com os dados e as coordenadas
     const lojista = await prisma.lojista.create({
       data: {
@@ -247,6 +276,14 @@ app.post('/lojistas', async (req, res) => {
         senha,
         latitude,
         longitude,
+        biografia,
+        avaliacao,
+        subcategoria,
+        categoria,
+        rating,
+        numeroAvaliacoes,
+        horarioFuncionamento,
+        descricao,
       }
     });
 
@@ -280,7 +317,7 @@ app.get('/lojistas', async (req, res) => {
 
 // Rota para atualizar um lojista
 app.put('/lojistas/:id', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha,imagemLojista, categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
 
   try {
     // Verifique se algum campo de endereço foi alterado
@@ -312,8 +349,17 @@ app.put('/lojistas/:id', async (req, res) => {
         numContato,
         email,
         senha,
+        imagemLojista,
         latitude,   // Atualiza a latitude, se recalculada
         longitude,  // Atualiza a longitude, se recalculada
+        biografia, 
+        avaliacao,
+        subcategoria,
+        categoria,
+        rating,
+        numeroAvaliacoes,
+        horarioFuncionamento,
+        descricao
       }
     });
 
@@ -342,20 +388,57 @@ app.delete('/lojistas/:id', async (req, res) => {
 
 // Rota para login de lojistas
 app.post('/login/lojistas', async (req, res) => {
-  const { email, senha } = req.body;
+  const { email, senha, status} = req.body;
 
   try {
     const lojista = await prisma.lojista.findUnique({
       where: { email: email },
     });
 
-    if (lojista && lojista.senha === senha) {
-      res.status(200).json({ message: 'Login bem-sucedido!', lojista });
+    // Verifica se o lojista foi encontrado
+    if (lojista) {
+      // Verifica se a senha está correta
+      if (senha === lojista.senha) {
+        // Verifica se o status do lojista é true
+        if (lojista.status === true) {
+          res.status(200).json({ message: 'Login bem-sucedido!', lojista });
+        } else {
+          res.status(403).json({ message: 'Conta inativa. Entre em contato com o suporte.' });
+        }
+      } else {
+        res.status(401).json({ message: 'Email ou senha incorretos!' });
+      }
     } else {
       res.status(401).json({ message: 'Email ou senha incorretos!' });
     }
   } catch (error) {
     console.error('Erro ao fazer login do lojista:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+//função banir
+app.put('/lojistas/:id/banir', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body; // Espera um valor booleano para definir o status
+
+  // Verifica se o status é um booleano
+  if (typeof status !== 'boolean') {
+    return res.status(400).json({ message: 'O campo "status" deve ser um valor booleano (true para ativo, false para banido).' });
+  }
+
+  try {
+    const lojista = await prisma.lojista.update({
+      where: { id: id },
+      data: { status: status }, 
+    });
+
+    res.status(200).json({
+      message: status ? 'Lojista ativado com sucesso!' : 'Lojista banido com sucesso!',
+      lojista,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar status do lojista:', error);
     res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
   }
 });
@@ -369,11 +452,12 @@ app.get('/produtos', async (req, res) => {
 
     let produtos = [];
 
-    
-
     if (id) {
       const produto = await prisma.produto.findUnique({
-        where: { id: id }
+        where: { AND: [
+          id ? { id: { contains: nome, mode: 'insensitive' } } : {},
+          idLojista ? { idLojista: { contains: idLojista, mode: 'insensitive' } } : {}
+        ] }
       });
       if (produto) {
         produtos = [produto];
@@ -404,7 +488,7 @@ app.get('/produtos', async (req, res) => {
 
 app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => {
   try {
-    const { nome, descricao, preco, idLojista } = req.body;
+    const { nome, descricao, preco,categoria,subcategoria, avaliacao,rating, idLojista } = req.body;
     const imagemProduto = req.file ? req.file.filename : null; 
 
     const novoProduto = await prisma.produto.create({
@@ -412,6 +496,10 @@ app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => 
         nome,
         descricao,
         preco,
+        categoria,
+        subcategoria,
+        rating,
+        avaliacao: avaliacao ? parseFloat(avaliacao) : null,
         idLojista,
         imagemProduto
       }
@@ -430,7 +518,7 @@ app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => 
 app.put('/produtos/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, descricao,preco, idLojista, imagemProduto } = req.body;
+    const {  nome, descricao, preco,categoria,subcategoria, avaliacao, idLojista,rating,imagemProduto } = req.body;
 
     const produtoAtualizado = await prisma.produto.update({
       where: { id: id },
@@ -438,6 +526,10 @@ app.put('/produtos/:id', async (req, res) => {
         nome,
         descricao,
         preco,
+        categoria,
+        subcategoria,
+        rating,
+        avaliacao: avaliacao ? parseFloat(avaliacao) : null,
         idLojista,
         imagemProduto
       }
@@ -594,9 +686,274 @@ app.get('/busca-produtos', async (req, res) => {
   }
 });
 
+//novas funções
+app.get('/lojistas-proximos', async (req, res) => {
+  const { latitude, longitude } = req.query;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({ message: 'Latitude e longitude são obrigatórios.' });
+  }
+
+  const lat = parseFloat(latitude);
+  const lon = parseFloat(longitude);
+  const raio = 1000000; // Raio de 20 km
+
+  try {
+    console.log('Parâmetros de busca:', { latitude, longitude, raio });
+
+    const lojistas = await prisma.lojista.findMany({
+      where: {
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+    });
+
+    if (lojistas.length === 0) {
+      return res.status(200).json({ message: 'Nenhum lojista encontrado.' });
+    }
+
+    const lojistasComDistancia = lojistas
+      .map(lojista => {
+        const distancia = geolib.getDistance(
+          { latitude: lojista.latitude, longitude: lojista.longitude },
+          { latitude: lat, longitude: lon }
+        );
+
+        return { ...lojista, distancia };
+      })
+      .filter(lojista => lojista.distancia <= raio)
+      .sort((a, b) => a.distancia - b.distancia);
+
+    if (lojistasComDistancia.length === 0) {
+      return res.status(200).json({
+        message: `Nenhum lojista encontrado dentro de ${raio / 1000} km da sua localização.`,
+      });
+    }
+
+    const resultado = lojistasComDistancia.map(lojista => ({
+      ...lojista,
+      distanciaFormatada: (lojista.distancia / 1000).toFixed(2) + ' km',
+    }));
+
+    console.log('Lojistas encontrados com distância:', resultado); // Para depuração
+
+    res.status(200).json({ lojistas: resultado });
+  } catch (error) {
+    console.error('Erro ao buscar lojistas próximos:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+
+app.get('/lojistas-melhor-avaliados', async (req, res) => {
+  const { latitude, longitude } = req.query;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({ message: 'Latitude e longitude são obrigatórios.' });
+  }
+
+  const lat = parseFloat(latitude);
+  const lon = parseFloat(longitude);
+  const raio = 1000000; // Raio de 20 km
+
+  try {
+    const lojistas = await prisma.lojista.findMany({
+      where: {
+        avaliacao: { gte: 4.0 }, // Filtra lojistas com avaliação maior ou igual a 4.0
+      },
+      orderBy: {
+        avaliacao: 'desc', // Ordena em ordem decrescente
+      },
+    });
+
+    if (lojistas.length === 0) {
+      return res.status(200).json({ message: 'Nenhum lojista encontrado com avaliação igual ou superior a 4.0.' });
+    }
+
+
+    
+    // Calcular a distância apenas se as coordenadas forem fornecidas
+    const resultado = lojistas.map(lojista => {
+      const distancia = geolib.getDistance(
+        { latitude: lojista.latitude, longitude: lojista.longitude },
+        { latitude: lat, longitude: lon }
+      );
+
+      return {
+        id: lojista.id,
+        nome: lojista.nome,
+        avaliacao: lojista.avaliacao,
+        imagemLojista: lojista.imagemLojista, // Adiciona a imagem do lojista
+        categoria: lojista.categoria, // Adiciona a categoria do lojista
+        distancia: distancia,
+        distanciaFormatada: (distancia / 1000).toFixed(2) + ' km', // Formata a distância
+      };
+    });
+
+    console.log('Lojistas encontrados com avaliações superiores a 4.0:', resultado); // Para depuração
+
+    res.status(200).json({ lojistas: resultado });
+  } catch (error) {
+    console.error('Erro ao buscar lojistas melhor avaliados:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+
+
+
+
+
+//contar Usuarios
+async function contarUsuarios() {
+  const uri = process.env.DATABASE_URL; 
+  const client = new MongoClient(uri);
+  let totalCount = 0;
+
+  try {
+    await client.connect();
+    const database = client.db('Usuarios');
+
+    
+    const collection1 = database.collection('User'); 
+    const count1 = await collection1.countDocuments();
+
+
+    const collection2 = database.collection('Lojista'); 
+    const count2 = await collection2.countDocuments();
+
+    
+    totalCount = count1 + count2;
+  } catch (error) {
+    console.error("Erro ao contar os documentos:", error);
+  } finally {
+    await client.close();
+  }
+
+  return totalCount;
+}
+
+
+app.get('/usuariosTotal', async (req, res) => {
+  const totalCount = await contarUsuarios();
+  res.send(`${totalCount}`);
+});
+
+
+
+//Validação do Lojista
+
+app.get('/validacao', async (req, res) => {
+  const { nome, email } = req.query;
+
+  try {
+    const lojistas = await prisma.validacao.findMany({
+      where: {
+        AND: [
+          nome ? { nome: { contains: nome, mode: 'insensitive' } } : {},
+          email ? { email: { contains: email, mode: 'insensitive' } } : {}
+        ]
+      }
+    });
+    res.status(200).json(lojistas);
+  } catch (error) {
+    console.error('Erro ao listar lojistas:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+
+app.post('/validacao', async (req, res) => {
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha } = req.body;
+
+  try {
+    const existingLojista = await prisma.validacao.findUnique({
+      where: { email }
+    });
+
+    if (existingLojista) {
+      return res.status(400).json({ message: 'Esse email já está cadastrado.' });
+    }
+
+    // Cria um novo lojista se o email não existir
+    const lojista = await prisma.validacao.create({
+      data: {
+        nome,
+        sobrenome,
+        nomeEmpresa,
+        cnpj,
+        cep,
+        logradouro,
+        cidade,
+        estado,
+        numEstab,
+        numContato,
+        email,
+        senha,
+      }
+    });
+
+    res.status(201).json(lojista);
+  } catch (error) {
+    console.error('Erro ao criar lojista:', error.message);
+    // Se o erro for um erro de violação de unicidade, trata separadamente
+    if (error.code === 'P2002') {
+      return res.status(400).json({ message: 'Esse email já está cadastrado.' });
+    }
+    res.status(500).json({ message: error.message || 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+app.delete('/validacao/:id', async (req, res) => {
+  try {
+    await prisma.validacao.delete({
+      where: {
+        id: req.params.id
+      }
+    });
+    res.status(200).json({ message: "Lojista deletado com sucesso!" });
+  } catch (error) {
+    console.error('Erro ao deletar lojista:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
+
+//enviar email 
+const transporter = nodemailer.createTransport({
+  host: 'in-v3.mailjet.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: '4f2e051acca82d5dac5cf5b3d9d532ff', 
+    pass: '126cdb5072a67affbdbb1c7f19bd79a5',
+  },
+});
+
+// Rota para enviar email
+app.post('/validacao/emailAprovado', async (req, res) => {
+  const { to, subject, message } = req.body;
+
+  const mailOptions = {
+    from: 'avancynew@gmail.com',
+    to,
+    subject,
+    text: message,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'Email enviado com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao enviar email:', error);
+    res.status(500).json({ message: 'Erro ao enviar email.' });
+  }
+});
+
+
 
  app.listen(4000)
- 
+
  /*
     Criar nossa API de Usuarios
     -Criar um usuário
