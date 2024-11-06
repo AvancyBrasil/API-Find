@@ -15,11 +15,9 @@ dotenv.config()
 const uploadsDir = path.resolve('uploads'); 
 const imagesDir = path.resolve('imagens');
 
-
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
-
 if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
@@ -486,11 +484,23 @@ app.get('/produtos', async (req, res) => {
 });
 
 
-app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => {
+app.post('/produtos', async (req, res) => {
   try {
-    const { nome, descricao, preco,categoria,subcategoria, avaliacao,rating, idLojista } = req.body;
-    const imagemProduto = req.file ? req.file.filename : null; 
+    console.log('Corpo da requisição:', req.body);
 
+    const { nome, descricao, preco, categoria, subcategoria, avaliacao, rating, idLojista, imagemProduto } = req.body;
+
+    // Verificar se todos os campos obrigatórios foram enviados
+    if (!nome || !descricao || !preco || !categoria || !idLojista) {
+      return res.status(400).json({ message: 'Todos os campos obrigatórios devem ser preenchidos' });
+    }
+
+    // Verificar se a imagemProduto foi fornecida
+    if (!imagemProduto) {
+      return res.status(400).json({ message: 'Link da imagem é necessário' });
+    }
+
+    // Criar novo produto no banco de dados
     const novoProduto = await prisma.produto.create({
       data: {
         nome,
@@ -499,19 +509,25 @@ app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => 
         categoria,
         subcategoria,
         rating,
-        avaliacao: avaliacao ? parseFloat(avaliacao) : null,
+        avaliacao: avaliacao ? parseFloat(avaliacao) : null, 
         idLojista,
-        imagemProduto
+        imagemProduto,
       }
     });
 
+    // Enviar resposta de sucesso
     res.status(201).json({
       message: "Produto novo adicionado com sucesso",
       novoProduto
     });
   } catch (error) {
     console.error('Erro ao criar produto:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
+    
+    // Enviar resposta com detalhes do erro
+    res.status(500).json({ 
+      message: 'Erro interno do servidor',
+      error: error.message // Detalhes do erro para diagnóstico
+    });
   }
 });
 
@@ -837,6 +853,39 @@ async function contarUsuarios() {
 app.get('/usuariosTotal', async (req, res) => {
   const totalCount = await contarUsuarios();
   res.send(`${totalCount}`);
+});
+
+async function contarUsuariosPorStatus() {
+  try {
+    // Buscar todos os usuários e lojistas
+    const usuarios = await prisma.user.findMany();
+    const lojistas = await prisma.lojista.findMany();
+
+    // Concatenar os arrays
+    const todosUsuarios = [...usuarios, ...lojistas];
+
+    // Contar ativos e inativos
+    const usuariosAtivos = todosUsuarios.filter(usuario => usuario.status === true).length;
+    const usuariosInativos = todosUsuarios.filter(usuario => usuario.status === false).length;
+
+    return { usuariosAtivos, usuariosInativos };
+
+  } catch (error) {
+    console.error("Erro ao buscar e contar usuários:", error);
+    throw error;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// Rota GET para retornar contagens de usuários ativos e inativos
+app.get('/usuariosStatus', async (req, res) => {
+  try {
+    const { usuariosAtivos, usuariosInativos } = await contarUsuariosPorStatus();
+    res.json({ usuariosAtivos, usuariosInativos });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar contagem de usuários' });
+  }
 });
 
 
