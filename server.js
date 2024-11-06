@@ -15,11 +15,9 @@ dotenv.config()
 const uploadsDir = path.resolve('uploads'); 
 const imagesDir = path.resolve('imagens');
 
-
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
-
 if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
@@ -168,34 +166,34 @@ app.get('/usuarios', async (req, res) => {
    res.status(200).json({message: "Usuarios deletado com sucesso!!"})
  })
 
- app.post('/login/usuarios', async (req, res) => {
-    const { email, senha } = req.body;
-    console.log('Tentativa de login com:', { email, senha });
-    
-    try {
-        const usuario = await prisma.user.findUnique({
-            where: { email: email },
-        });
-        
-        console.log('Usuário encontrado:', usuario);
 
-        if (usuario) {
-            if (usuario.senha === senha) {
-        
-                
-                res.status(200).json({
-                    message: 'Login bem-sucedido!',
-                });
-            } else {
-                res.status(401).json({ message: 'Email ou senha incorretos!' });
-            }
+app.post('/login/usuarios', async (req, res) => {
+  const { email, senha, status} = req.body;
+  console.log('Tentativa de login com:', { email, senha });
+
+  try {
+    const usuario = await prisma.user.findUnique({
+      where: { email: email },
+    });
+    console.log('Usuário encontrado:', usuario);
+    if (usuario) {
+   
+      if (senha === usuario.senha) {
+        if (usuario.status === true) {
+          res.status(200).json({ message: 'Login bem-sucedido!', usuario });
         } else {
-            res.status(401).json({ message: 'Email ou senha incorretos!' });
+          res.status(403).json({ message: 'Conta banida. Entre em contato com o suporte.' });
         }
-    } catch (error) {
-        console.error('Erro ao fazer login:', error);
-        res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+      } else {
+        res.status(401).json({ message: 'Email ou senha incorretos!' });
+      }
+    } else {
+      res.status(401).json({ message: 'Email ou senha incorretos!' });
     }
+  } catch (error) {
+    console.error('Erro ao fazer login do lojista:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
 });
 
 //função banir
@@ -296,24 +294,91 @@ app.post('/lojistas', async (req, res) => {
 
 
 // Rota para listar lojistas
+
 app.get('/lojistas', async (req, res) => {
-  const { nome, email } = req.query;
+  const { id, nome, email, categoria, latitude, longitude } = req.query;
 
   try {
+    // Caso um ID específico seja passado
+    if (id) {
+      const lojista = await prisma.lojista.findUnique({
+        where: { id: id }, // Prisma espera uma string válida aqui
+      });
+
+      // Verifica se o lojista foi encontrado
+      if (!lojista) {
+        return res.status(404).json({ message: 'Lojista não encontrado.' });
+      }
+
+      // Se latitude e longitude forem fornecidas, calcular a distância
+      if (latitude && longitude) {
+        const lat = parseFloat(latitude);
+        const lon = parseFloat(longitude);
+
+        const distancia = geolib.getDistance(
+          { latitude: lojista.latitude, longitude: lojista.longitude },
+          { latitude: lat, longitude: lon }
+        );
+
+        // Adiciona a distância ao objeto do lojista
+        return res.status(200).json({ ...lojista, distancia });
+      }
+
+      return res.status(200).json(lojista);
+    }
+
+    // Busca por múltiplos lojistas usando outros filtros
     const lojistas = await prisma.lojista.findMany({
       where: {
         AND: [
           nome ? { nome: { contains: nome, mode: 'insensitive' } } : {},
-          email ? { email: { contains: email, mode: 'insensitive' } } : {}
-        ]
-      }
+          email ? { email: { contains: email, mode: 'insensitive' } } : {},
+          categoria ? { categoria: { contains: categoria, mode: 'insensitive' } } : {},
+        ],
+      },
     });
+
+    // Se latitude e longitude forem fornecidas, calcular a distância para cada lojista
+    if (latitude && longitude) {
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+      const raio = 20000; // Raio de 20 km
+
+      const lojistasComDistancia = lojistas
+        .map(lojista => {
+          const distancia = geolib.getDistance(
+            { latitude: lojista.latitude, longitude: lojista.longitude },
+            { latitude: lat, longitude: lon }
+          );
+
+          return { ...lojista, distancia };
+        })
+        .filter(lojista => lojista.distancia <= raio)
+        .sort((a, b) => a.distancia - b.distancia);
+
+      if (lojistasComDistancia.length === 0) {
+        return res.status(200).json({
+          message: `Nenhum lojista encontrado dentro de ${raio / 1000} km da sua localização.`,
+        });
+      }
+
+      const resultado = lojistasComDistancia.map(lojista => ({
+        ...lojista,
+        distanciaFormatada: (lojista.distancia / 1000).toFixed(2) + ' km',
+      }));
+
+      return res.status(200).json({ lojistas: resultado });
+    }
+
+    // Caso contrário, apenas retorna os lojistas encontrados
     res.status(200).json(lojistas);
   } catch (error) {
     console.error('Erro ao listar lojistas:', error);
     res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
   }
 });
+
+
 
 // Rota para atualizar um lojista
 app.put('/lojistas/:id', async (req, res) => {
@@ -394,12 +459,9 @@ app.post('/login/lojistas', async (req, res) => {
     const lojista = await prisma.lojista.findUnique({
       where: { email: email },
     });
-
-    // Verifica se o lojista foi encontrado
     if (lojista) {
-      // Verifica se a senha está correta
+   
       if (senha === lojista.senha) {
-        // Verifica se o status do lojista é true
         if (lojista.status === true) {
           res.status(200).json({ message: 'Login bem-sucedido!', lojista });
         } else {
@@ -486,11 +548,23 @@ app.get('/produtos', async (req, res) => {
 });
 
 
-app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => {
+app.post('/produtos', async (req, res) => {
   try {
-    const { nome, descricao, preco,categoria,subcategoria, avaliacao,rating, idLojista } = req.body;
-    const imagemProduto = req.file ? req.file.filename : null; 
+    console.log('Corpo da requisição:', req.body);
 
+    const { nome, descricao, preco, categoria, subcategoria, avaliacao, rating, idLojista, imagemProduto } = req.body;
+
+    // Verificar se todos os campos obrigatórios foram enviados
+    if (!nome || !descricao || !preco || !categoria || !idLojista) {
+      return res.status(400).json({ message: 'Todos os campos obrigatórios devem ser preenchidos' });
+    }
+
+    // Verificar se a imagemProduto foi fornecida
+    if (!imagemProduto) {
+      return res.status(400).json({ message: 'Link da imagem é necessário' });
+    }
+
+    // Criar novo produto no banco de dados
     const novoProduto = await prisma.produto.create({
       data: {
         nome,
@@ -499,19 +573,25 @@ app.post('/produtos', uploadImages.single('imagemProduto'), async (req, res) => 
         categoria,
         subcategoria,
         rating,
-        avaliacao: avaliacao ? parseFloat(avaliacao) : null,
+        avaliacao: avaliacao ? parseFloat(avaliacao) : null, 
         idLojista,
-        imagemProduto
+        imagemProduto,
       }
     });
 
+    // Enviar resposta de sucesso
     res.status(201).json({
       message: "Produto novo adicionado com sucesso",
       novoProduto
     });
   } catch (error) {
     console.error('Erro ao criar produto:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
+    
+    // Enviar resposta com detalhes do erro
+    res.status(500).json({ 
+      message: 'Erro interno do servidor',
+      error: error.message // Detalhes do erro para diagnóstico
+    });
   }
 });
 
@@ -837,6 +917,39 @@ async function contarUsuarios() {
 app.get('/usuariosTotal', async (req, res) => {
   const totalCount = await contarUsuarios();
   res.send(`${totalCount}`);
+});
+
+async function contarUsuariosPorStatus() {
+  try {
+    // Buscar todos os usuários e lojistas
+    const usuarios = await prisma.user.findMany();
+    const lojistas = await prisma.lojista.findMany();
+
+    // Concatenar os arrays
+    const todosUsuarios = [...usuarios, ...lojistas];
+
+    // Contar ativos e inativos
+    const usuariosAtivos = todosUsuarios.filter(usuario => usuario.status === true).length;
+    const usuariosInativos = todosUsuarios.filter(usuario => usuario.status === false).length;
+
+    return { usuariosAtivos, usuariosInativos };
+
+  } catch (error) {
+    console.error("Erro ao buscar e contar usuários:", error);
+    throw error;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// Rota GET para retornar contagens de usuários ativos e inativos
+app.get('/usuariosStatus', async (req, res) => {
+  try {
+    const { usuariosAtivos, usuariosInativos } = await contarUsuariosPorStatus();
+    res.json({ usuariosAtivos, usuariosInativos });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar contagem de usuários' });
+  }
 });
 
 
