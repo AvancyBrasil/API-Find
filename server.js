@@ -269,14 +269,34 @@ const obterCoordenadas = async (logradouro, cidade, estado) => {
 
 //lojista
 
-app.post('/lojistas', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha,categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
+app.post('/lojistas', upload.single('imagemLojista'), async (req, res) => {
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha, categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
+  const imagemLojista = req.file ? req.file.buffer : null;
 
   try {
-    // Obtenha a latitude e longitude usando a função
-    const estado = req.body.estado || ''; // Inclua o estado se necessário
+    let imagemLojistaPublicId = null;
+
+    // Fazer upload da imagem para o Cloudinary
+    if (imagemLojista) {
+      const cloudinaryResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'image', folder: 'lojistas' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        streamifier.createReadStream(imagemLojista).pipe(stream);
+      });
+
+      imagemLojistaPublicId = cloudinaryResult.public_id;
+    }
+
+    // Obter as coordenadas com base no endereço
+    const estado = req.body.estado || '';
     const { latitude, longitude } = await obterCoordenadas(logradouro, cidade, estado);
-    // Crie o lojista com os dados e as coordenadas
+
+    // Criar o lojista no banco de dados
     const lojista = await prisma.lojista.create({
       data: {
         nome,
@@ -304,6 +324,7 @@ app.post('/lojistas', async (req, res) => {
         numeroAvaliacoes,
         horarioFuncionamento,
         descricao,
+        imagemLojista: imagemLojistaPublicId,
       }
     });
 
@@ -403,23 +424,50 @@ app.get('/lojistas', async (req, res) => {
 
 
 // Rota para atualizar um lojista
-app.put('/lojistas/:id', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha,imagemLojista, categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
+app.put('/lojistas/:id', upload.single('imagemLojista'), async (req, res) => {
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato, email, senha, categoria, rating, numeroAvaliacoes, horarioFuncionamento, descricao, biografia, avaliacao, subcategoria } = req.body;
+  const imagemLojista = req.file ? req.file.buffer : undefined;
 
   try {
-    // Verifique se algum campo de endereço foi alterado
+    // Buscar o lojista existente
+    const lojistaExistente = await prisma.lojista.findUnique({ where: { id: req.params.id } });
+    if (!lojistaExistente) {
+      return res.status(404).json({ message: 'Lojista não encontrado.' });
+    }
+
+    let imagemLojistaPublicId = lojistaExistente.imagemLojista;
+
+    if (imagemLojista) {
+      // Apagar a imagem anterior no Cloudinary
+      if (imagemLojistaPublicId) {
+        await cloudinary.uploader.destroy(imagemLojistaPublicId);
+      }
+
+      // Fazer upload da nova imagem
+      const cloudinaryResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'image', folder: 'lojistas' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        streamifier.createReadStream(imagemLojista).pipe(stream);
+      });
+
+      imagemLojistaPublicId = cloudinaryResult.public_id;
+    }
+
+    // Obter as coordenadas, caso o endereço tenha sido alterado
     let latitude, longitude;
     if (logradouro || cidade || estado) {
-      const estado = req.body.estado || ''; // Inclua o estado se necessário
-      // Obtenha as novas coordenadas com base no novo endereço
+      const estado = req.body.estado || ''; 
       ({ latitude, longitude } = await obterCoordenadas(logradouro, cidade, estado));
     }
 
-    // Atualize o lojista com os novos dados, incluindo latitude e longitude (se houver)
+    // Atualizar o lojista no banco de dados
     const lojistaAtualizado = await prisma.lojista.update({
-      where: {
-        id: req.params.id
-      },
+      where: { id: req.params.id },
       data: {
         nome,
         sobrenome,
@@ -436,17 +484,17 @@ app.put('/lojistas/:id', async (req, res) => {
         numContato,
         email,
         senha,
-        imagemLojista,
-        latitude,   // Atualiza a latitude, se recalculada
-        longitude,  // Atualiza a longitude, se recalculada
-        biografia, 
+        imagemLojista: imagemLojistaPublicId,
+        latitude,
+        longitude,
+        biografia,
         avaliacao,
         subcategoria,
         categoria,
         rating,
         numeroAvaliacoes,
         horarioFuncionamento,
-        descricao
+        descricao,
       }
     });
 
@@ -456,7 +504,6 @@ app.put('/lojistas/:id', async (req, res) => {
     res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
   }
 });
-
 
 // Rota para deletar um lojista
 app.delete('/lojistas/:id', async (req, res) => {
