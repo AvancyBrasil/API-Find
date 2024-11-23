@@ -9,144 +9,166 @@ import geolib from 'geolib';
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import { fileURLToPath } from 'url';
+import streamifier from 'streamifier';
+import { v2 as cloudinary } from 'cloudinary';
 
-dotenv.config()
+dotenv.config();
 
-const uploadsDir = path.resolve('uploads'); 
-const imagesDir = path.resolve('imagens');
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir);
-}
-const prisma = new PrismaClient()
-
- const app = express()
- app.use(express.json())
- app.use(cors())
-
- const usuarios = []
-
-
-app.use('/uploads', express.static(uploadsDir));
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname)); 
-  }
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+const prisma = new PrismaClient();
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Configuração do Multer para armazenamento em memória
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-app.use('/imagens', express.static(imagesDir));
-const imagesStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, imagesDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
+// Rota para criar um usuário com upload de foto de perfil
+app.post('/usuarios', upload.single('fotoPerfil'), async (req, res) => {
+  const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
+  const fotoPerfil = req.file ? req.file.buffer : null;
+
+  try {
+    let fotoPerfilPublicId = null;
+
+    // Fazer upload da imagem para o Cloudinary
+    if (fotoPerfil) {
+      const cloudinaryResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'image', folder: 'usuarios' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        streamifier.createReadStream(fotoPerfil).pipe(stream);
+      });
+
+      fotoPerfilPublicId = cloudinaryResult.public_id;
+    }
+
+    // Criar o usuário no banco de dados
+    const usuario = await prisma.user.create({
+      data: {
+        nome,
+        cpf,
+        dataNasc,
+        telefone,
+        cep,
+        logradouro,
+        bairro,
+        cidade,
+        email,
+        senha,
+        fotoPerfil: fotoPerfilPublicId,
+      }
+    });
+
+    return res.status(201).json(usuario);
+  } catch (error) {
+    console.error('Erro ao criar usuário:', error);
+    res.status(500).json({ message: 'Erro ao criar usuário.' });
   }
 });
-const uploadImages = multer({ storage: imagesStorage });
-  //Usuarios
-  
-  app.post('/usuarios', upload.single('fotoPerfil'), async (req, res) => {
-    const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
-    const fotoPerfil = req.file ? req.file.filename : null;
-  
-    try {
-      const usuario = await prisma.user.create({
-        data: {
-          nome,
-          cpf,
-          dataNasc,
-          telefone,
-          cep,
-          logradouro,
-          bairro,
-          cidade,
-          email,
-          senha,
-          fotoPerfil,
-        }
-      });
-      res.status(201).json(usuario);
-    } catch (error) {
-      console.error('Erro ao criar usuário:', error);
-      res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+
+// Rota para atualizar um usuário com nova foto de perfil
+app.put('/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
+  const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
+  const fotoPerfil = req.file ? req.file.buffer : undefined;
+
+  try {
+    // Buscar o usuário existente para verificar a foto atual
+    const usuarioExistente = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!usuarioExistente) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
     }
-  });
-  
-  app.put('/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
-    console.log('Corpo da requisição:', req.body); 
-    console.log('Arquivo recebido:', req.file); 
-  
-    
-    const { nome, cpf, dataNasc, telefone, cep, logradouro, bairro, cidade, email, senha } = req.body;
-    const fotoPerfil = req.file ? req.file.filename : undefined; 
-  
-    console.log('Foto perfil:', fotoPerfil); 
-  
-    try {
-      const usuarioAtualizado = await prisma.user.update({
-        where: { id: req.params.id },
-        data: {
-          nome,
-          cpf,
-          dataNasc,
-          telefone,
-          cep,
-          logradouro,
-          bairro,
-          cidade,
-          email,
-          senha,
-          ...(fotoPerfil && { fotoPerfil })
-        }
+
+    let fotoPerfilPublicId = usuarioExistente.fotoPerfil;
+
+    // Atualizar a foto no Cloudinary se uma nova foto foi enviada
+    if (fotoPerfil) {
+      // Excluir a foto antiga, se houver
+      if (fotoPerfilPublicId) {
+        await cloudinary.uploader.destroy(fotoPerfilPublicId);
+      }
+
+      // Fazer upload da nova foto
+      const cloudinaryResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'image', folder: 'usuarios' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        streamifier.createReadStream(fotoPerfil).pipe(stream);
       });
-  
-      console.log('Usuário atualizado:', usuarioAtualizado); // Verifique se o usuário foi atualizado corretamente
-      res.status(200).json(usuarioAtualizado);
-    } catch (error) {
-      console.error('Erro ao atualizar usuário:', error);
-      res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+
+      fotoPerfilPublicId = cloudinaryResult.public_id;
     }
-  });
+
+    // Atualizar os dados do usuário
+    const usuarioAtualizado = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        nome,
+        cpf,
+        dataNasc,
+        telefone,
+        cep,
+        logradouro,
+        bairro,
+        cidade,
+        email,
+        senha,
+        fotoPerfil: fotoPerfilPublicId,
+      }
+    });
+
+    return res.status(200).json(usuarioAtualizado);
+  } catch (error) {
+    console.error('Erro ao atualizar usuário:', error);
+    res.status(500).json({ message: 'Erro ao atualizar usuário.' });
+  }
+});
   
-  
-  
-  
-app.get('/usuarios', async (req, res) => {
+  app.get('/usuarios', async (req, res) => {
     try {
       const { id, nome, email } = req.query;
-      
+  
       let usuarios = [];
-      
+  
+      // Se o id for fornecido, buscamos pelo id
       if (id) {
-        
+        // Busca um usuário específico pelo ID (sem conversão para int)
         const usuario = await prisma.user.findUnique({
-          where: { id: parseInt(id) }
+          where: { id: id }  // ID agora é passado diretamente como string
         });
+  
         if (usuario) {
           usuarios = [usuario];
         } else {
           return res.status(404).json({ message: 'Usuário não encontrado' });
         }
       } else {
+        // Caso o id não seja fornecido, buscamos pelos filtros nome e email
         usuarios = await prisma.user.findMany({
           where: {
             AND: [
               nome ? { nome: { contains: nome, mode: 'insensitive' } } : {},
               email ? { email: { contains: email, mode: 'insensitive' } } : {}
-            
             ]
           }
         });
       }
-      
+  
       res.status(200).json(usuarios);
     } catch (error) {
       console.error('Erro ao buscar usuários:', error);
@@ -921,14 +943,12 @@ app.get('/usuariosTotal', async (req, res) => {
 
 async function contarUsuariosPorStatus() {
   try {
-    // Buscar todos os usuários e lojistas
+
     const usuarios = await prisma.user.findMany();
     const lojistas = await prisma.lojista.findMany();
 
-    // Concatenar os arrays
     const todosUsuarios = [...usuarios, ...lojistas];
 
-    // Contar ativos e inativos
     const usuariosAtivos = todosUsuarios.filter(usuario => usuario.status === true).length;
     const usuariosInativos = todosUsuarios.filter(usuario => usuario.status === false).length;
 
@@ -1063,6 +1083,441 @@ app.post('/validacao/emailAprovado', async (req, res) => {
   }
 });
 
+//seguidores 
+// POST /seguir
+app.post('/seguir', async (req, res) => {
+  const { userId, lojistaId } = req.body;
+
+  try {
+    // Verifica se o relacionamento já existe
+    const existingFollow = await prisma.userFollowLojista.findFirst({
+      where: {
+        userId,
+        lojistaId,
+      },
+    });
+
+    if (existingFollow) {
+      return res.status(400).json({ mensagem: 'Você já está seguindo este lojista.' });
+    }
+
+    // Cria o relacionamento de seguir
+    const follow = await prisma.userFollowLojista.create({
+      data: {
+        userId,
+        lojistaId,
+      },
+    });
+
+    res.json({ mensagem: 'Lojista seguido com sucesso!', follow });
+  } catch (error) {
+    res.status(500).json({ mensagem: 'Erro ao seguir o lojista.', error });
+  }
+});
+
+// DELETE /deixar-seguir
+app.delete('/deixar-seguir', async (req, res) => {
+  const { userId, lojistaId } = req.body;
+
+  try {
+    // Remove o relacionamento de seguir
+    await prisma.userFollowLojista.deleteMany({
+      where: {
+        userId,
+        lojistaId,
+      },
+    });
+
+    res.json({ mensagem: 'Você deixou de seguir o lojista com sucesso!' });
+  } catch (error) {
+    res.status(500).json({ mensagem: 'Erro ao deixar de seguir o lojista.', error });
+  }
+});
+// GET /verificar-seguindo
+app.get('/verificar-seguindo', async (req, res) => {
+  const { userId, lojistaId } = req.query;
+
+  try {
+    // Verifica se o relacionamento de seguir existe
+    const existingFollow = await prisma.userFollowLojista.findFirst({
+      where: {
+        userId,
+        lojistaId,
+      },
+    });
+
+    if (existingFollow) {
+      // Se existe, significa que o usuário já está seguindo
+      return res.json({ isFollowing: true, mensagem: 'Você já está seguindo este lojista.' });
+    }
+
+    // Se não encontrou, significa que o usuário não está seguindo
+    res.json({ isFollowing: false, mensagem: 'Você ainda não está seguindo este lojista.' });
+  } catch (error) {
+    res.status(500).json({ mensagem: 'Erro ao verificar o status de seguir.', error });
+  }
+});
+
+
+// GET /produtos-seguindo
+app.get('/produtos-seguindo', async (req, res) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ mensagem: 'userId é obrigatório.' });
+  }
+
+  try {
+    // 1. Verifica se o usuário existe
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!userExists) {
+      return res.status(404).json({ mensagem: 'Usuário não encontrado.' });
+    }
+
+    console.log("Usuário encontrado:", userExists);
+
+    // 2. Busca os lojistas que o usuário segue
+    const following = await prisma.userFollowLojista.findMany({
+      where: { userId },
+      select: { lojistaId: true },
+    });
+
+    console.log("Lojistas seguidos:", following);
+
+    if (following.length === 0) {
+      return res.json({ mensagem: "Você não está seguindo nenhum lojista.", produtos: [] });
+    }
+
+    // Extrai os IDs dos lojistas seguidos
+    const lojistasSeguidos = following.map(follow => follow.lojistaId);
+
+    console.log("IDs dos lojistas seguidos:", lojistasSeguidos);
+
+    // 3. Busca os produtos para cada lojista seguido individualmente
+    let produtos = [];
+    for (const lojistaId of lojistasSeguidos) {
+      const produtosDoLojista = await prisma.produto.findMany({
+        where: {
+          idLojista: lojistaId,
+          status: true,
+        },
+        include: {
+          lojista: {
+            select: {
+              id: true,
+              nomeEmpresa: true,
+              imagemLojista: true,
+            }
+          },
+        },
+      });
+      console.log(`Produtos do lojista ${lojistaId}:`, produtosDoLojista);
+      produtos = produtos.concat(produtosDoLojista);
+    }
+
+    if (produtos.length === 0) {
+      return res.json({ mensagem: "Não há produtos disponíveis dos lojistas que você segue.", produtos: [] });
+    }
+
+    return res.json({
+      mensagem: "Produtos dos lojistas que você segue.",
+      produtos,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar produtos:", error);
+    res.status(500).json({ mensagem: 'Erro ao buscar produtos.', error });
+  }
+});
+
+
+
+app.post('/avaliar-lojista', async (req, res) => {
+  const { lojistaId, usuarioId, nota, comentario } = req.body;
+
+  if (!lojistaId || !usuarioId || nota === undefined) {
+    return res.status(400).json({ mensagem: 'Lojista, usuário e nota são obrigatórios.' });
+  }
+
+  if (nota < 1 || nota > 5) {
+    return res.status(400).json({ mensagem: 'A nota deve estar entre 1 e 5.' });
+  }
+
+  try {
+    // Verifica se o lojista existe
+    const lojista = await prisma.lojista.findUnique({
+      where: { id: lojistaId },
+      include: { avaliacoes: true }
+    });
+
+    if (!lojista) {
+      return res.status(404).json({ mensagem: 'Lojista não encontrado.' });
+    }
+
+    // Cria a nova avaliação
+    const novaAvaliacao = await prisma.avaliacao.create({
+      data: {
+        usuarioId,
+        lojistaId,
+        nota,
+        comentario
+      }
+    });
+
+    // Calcula a média atualizada
+    const totalAvaliacoes = lojista.avaliacoes.length + 1;
+    const somaAvaliacoes = lojista.avaliacoes.reduce((acc, avaliacao) => acc + avaliacao.nota, nota);
+    const novaMedia = parseFloat((somaAvaliacoes / totalAvaliacoes).toFixed(2));
+
+    // Atualiza o rating do lojista
+    await prisma.lojista.update({
+      where: { id: lojistaId },
+      data: { avaliacao: novaMedia }
+    });
+
+    res.status(201).json({
+      mensagem: 'Avaliação registrada com sucesso!',
+      novaAvaliacao,
+      novaMedia
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ mensagem: 'Erro ao registrar a avaliação.', error });
+  }
+}); 
+
+
+// Função para obter avaliações de um lojista
+const getAvaliacoesByLojistaId = async (req, res) => {
+  const { lojistaId } = req.params; // Pega o id do lojista da URL
+
+  try {
+    const avaliacoes = await prisma.avaliacao.findMany({
+      where: {
+        lojistaId: lojistaId, // Filtra as avaliações para um lojista específico
+      },
+      include: {
+        usuario: true, // Inclui os dados do usuário que fez a avaliação
+      },
+    });
+
+    // Verifica se o lojista tem avaliações
+    if (avaliacoes.length === 0) {
+      return res.status(404).json({ message: 'Nenhuma avaliação encontrada para este lojista.' });
+    }
+
+    // Retorna as avaliações encontradas
+    return res.status(200).json(avaliacoes);
+  } catch (error) {
+    console.error('Erro ao buscar avaliações:', error);
+    return res.status(500).json({ message: 'Erro interno do servidor.' });
+  }
+};
+
+
+app.get('/avaliacoes2/lojista/:lojistaId', async (req, res) => {
+  const { lojistaId } = req.params; // Pega o id do lojista da URL
+
+  try {
+    // Verifica se o lojista existe
+    const lojista = await prisma.lojista.findUnique({
+      where: { id: lojistaId },
+      include: { avaliacoes: true } // Inclui as avaliações associadas ao lojista
+    });
+
+    if (!lojista) {
+      return res.status(404).json({ mensagem: 'Lojista não encontrado.' });
+    }
+
+    // Retorna as avaliações do lojista
+    if (lojista.avaliacoes.length === 0) {
+      return res.status(404).json({ mensagem: 'Nenhuma avaliação encontrada para este lojista.' });
+    }
+
+    res.status(200).json({
+      mensagem: 'Avaliações encontradas com sucesso!',
+      avaliacoes: lojista.avaliacoes
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ mensagem: 'Erro ao buscar as avaliações.', error });
+  }
+});
+
+app.get('/avaliacoes/lojista/:id', async (req, res) => {
+  const { id } = req.params;  // Obtém o id do lojista a partir dos parâmetros da URL
+
+  try {
+    // Consultando as avaliações do lojista
+    const avaliacoes = await prisma.avaliacao.findMany({
+      where: {
+        lojistaId: id,  // Filtrando pelas avaliações do lojista específico
+      },
+      include: {
+        usuario: true,  // Incluindo as informações do usuário que fez a avaliação
+      },
+    });
+
+    // Retornando as avaliações encontradas
+    res.json(avaliacoes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao buscar avaliações' });
+  }
+});
+
+app.get('/lojista/:lojistaId/seguidores', async (req, res) => {
+  const { lojistaId } = req.params; // pegando o lojistaId da URL
+
+  try {
+    // Buscando o número de seguidores
+    const followersCount = await prisma.userFollowLojista.count({
+      where: {
+        lojistaId: lojistaId
+      }
+    });
+
+    // Buscando os seguidores do lojista
+    const followers = await prisma.userFollowLojista.findMany({
+      where: {
+        lojistaId: lojistaId
+      },
+      include: {
+        user: true, // Incluindo os detalhes dos usuários que seguem
+      }
+    });
+
+    // Retornando a resposta com o número de seguidores e a lista de seguidores
+    res.status(200).json({
+      followersCount,
+      followers: followers.map(follow => follow.user), // retornando apenas as informações do usuário
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao buscar seguidores do lojista' });
+  }
+});
+
+
+// Endpoint POST para adicionar um produto aos favoritos
+app.post('/adicionar-favorito', async (req, res) => {
+  const { userId, produtoId } = req.body;
+
+  // Verifica se os parâmetros foram passados
+  if (!userId || !produtoId) {
+    return res.status(400).json({ message: 'userId e produtoId são necessários.' });
+  }
+
+  try {
+    // Verifica se o produto já está nos favoritos do usuário
+    const produtoFavoritoExistente = await prisma.produtoFavorito.findFirst({
+      where: {
+        userId: userId,
+        produtoId: produtoId,
+      },
+    });
+
+    if (produtoFavoritoExistente) {
+      return res.status(400).json({ message: 'Produto já está nos favoritos.' });
+    }
+
+    // Adiciona o produto aos favoritos
+    const produtoFavorito = await prisma.produtoFavorito.create({
+      data: {
+        userId: userId,
+        produtoId: produtoId,
+      },
+    });
+
+    return res.status(201).json({ message: 'Produto adicionado aos favoritos.', produtoFavorito });
+  } catch (error) {
+    console.error("Erro ao adicionar produto aos favoritos:", error);
+    return res.status(500).json({ message: 'Erro ao adicionar produto aos favoritos.', error: error.message });
+  }
+});
+
+
+// Rota para verificar se o produto está nos favoritos
+app.get('/verificar-favorito/:userId/:produtoId', async (req, res) => {
+  const { userId, produtoId } = req.params;
+  
+  try {
+    const produtoFavorito = await prisma.produtoFavorito.findFirst({
+      where: {
+        userId: userId,
+        produtoId: produtoId,
+      },
+    });
+
+    if (produtoFavorito) {
+      return res.status(200).json({ favorito: true });
+    }
+
+    return res.status(200).json({ favorito: false });
+  } catch (error) {
+    console.error('Erro ao verificar favorito:', error);
+    return res.status(500).json({ message: 'Erro ao verificar favorito.' });
+  }
+});
+
+// Rota para remover o produto dos favoritos
+app.delete('/remover-favorito/:userId/:produtoId', async (req, res) => {
+  const { userId, produtoId } = req.params;
+  
+  try {
+    await prisma.produtoFavorito.deleteMany({
+      where: {
+        userId: userId,
+        produtoId: produtoId,
+      },
+    });
+
+    return res.status(200).json({ message: 'Produto removido dos favoritos.' });
+  } catch (error) {
+    console.error('Erro ao remover produto dos favoritos:', error);
+    return res.status(500).json({ message: 'Erro ao remover produto dos favoritos.' });
+  }
+});
+
+
+app.get('/favoritos/usuario/:id', async (req, res) => {
+  const { id } = req.params; // Obtém o ID do usuário a partir dos parâmetros da URL
+
+  try {
+    // Consultando os produtos favoritos do usuário
+    const favoritos = await prisma.produtoFavorito.findMany({
+      where: {
+        userId: id, // Filtra pelos favoritos do usuário específico
+      },
+      include: {
+        produto: {
+          include: {
+            lojista: { // Inclui os dados do lojista relacionado ao produto
+              select: {
+                nomeEmpresa: true,    // Nome da empresa
+                imagemLojista: true,  // Imagem do lojista
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Retorna os produtos favoritos com os dados do lojista
+    res.json(
+      favoritos.map(fav => ({
+        ...fav.produto,
+        lojista: fav.produto.lojista,
+      }))
+    );
+  } catch (error) {
+    console.error('Erro ao buscar produtos favoritos:', error.message);
+    res.status(500).json({ error: 'Erro ao buscar produtos favoritos' });
+  }
+});
+
 
 
  app.listen(4000)
@@ -1081,4 +1536,3 @@ app.post('/validacao/emailAprovado', async (req, res) => {
     2) Endereço
 
  */
-
