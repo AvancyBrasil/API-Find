@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "vercel-build": "prisma db push && next build"
+    "vercel-build": "prisma db push"
   },
   "keywords": [],
   "author": "",
