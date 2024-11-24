@@ -1566,6 +1566,32 @@ app.get('/favoritos/usuario/:id', async (req, res) => {
 });
 
 
+// Endpoint para obter os lojistas que um usuário segue
+app.get('/lojistas-seguidos/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    // Busca os lojistas que o usuário segue
+    const lojistasSeguidos = await prisma.userFollowLojista.findMany({
+      where: {
+        userId: userId, // Filtra pelo ID do usuário
+      },
+      include: {
+        lojista: true, // Inclui os dados completos do lojista
+      },
+    });
+
+    // Extrai apenas os dados dos lojistas
+    const lojistas = lojistasSeguidos.map((entry) => entry.lojista);
+
+    res.status(200).json(lojistas);
+  } catch (error) {
+    console.error('Erro ao buscar lojistas seguidos:', error);
+    res.status(500).json({ error: 'Erro ao buscar lojistas seguidos.' });
+  }
+});
+
+
 
  app.listen(4000)
 
