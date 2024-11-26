@@ -24,7 +24,12 @@ cloudinary.config({
 const prisma = new PrismaClient();
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*'); // Permite qualquer origem
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS'); // Métodos permitidos
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Cabeçalhos permitidos
+    next();
+});
 
 // Configuração do Multer para armazenamento em memória
 const storage = multer.memoryStorage();
