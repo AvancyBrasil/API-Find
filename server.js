@@ -30,6 +30,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Cabeçalhos permitidos
     next();
 });
+app.use(cors());
 
 // Configuração do Multer para armazenamento em memória
 const storage = multer.memoryStorage();
