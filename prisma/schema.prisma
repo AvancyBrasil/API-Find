@@ -88,8 +88,6 @@ model Validacao {
   estado       String?
   numContato   String?
   numEstab     String?
-  categoria    String? 
-  descricao    String?
   email        String   @unique
   senha        String
 }
