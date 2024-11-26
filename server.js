@@ -1057,7 +1057,7 @@ app.get('/validacao', async (req, res) => {
 
 
 app.post('/validacao', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato,categoria,descricao,email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato,categoria,descricao, email, senha } = req.body;
 
   try {
     const existingLojista = await prisma.validacao.findUnique({
@@ -1087,17 +1087,6 @@ app.post('/validacao', async (req, res) => {
         senha,
       }
     });
-
-    res.status(201).json(lojista);
-  } catch (error) {
-    console.error('Erro ao criar lojista:', error.message);
-    // Se o erro for um erro de violação de unicidade, trata separadamente
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Esse email já está cadastrado.' });
-    }
-    res.status(500).json({ message: error.message || 'Erro no servidor. Tente novamente mais tarde.' });
-  }
-});
 
 app.delete('/validacao/:id', async (req, res) => {
   try {
