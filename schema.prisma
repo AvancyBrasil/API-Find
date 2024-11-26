@@ -14,8 +14,8 @@ datasource db {
 }
 
 model User {
-  id          String             @id @map("_id") @default(auto()) @db.ObjectId
-  nome        String
+  id          String   @id @map("_id") @default(auto()) @db.ObjectId
+  nome        String   
   cpf         String
   dataNasc    String
   telefone    String
@@ -23,16 +23,13 @@ model User {
   logradouro  String
   bairro      String
   cidade      String
-  email       String             @unique
+  email       String  @unique
   senha       String
   fotoPerfil  String?
-  status      Boolean            @default(true)
-  tipo        String             @default("cliente")
-  seguindoLojistas UserFollowLojista[] @relation("UserFollows")
-  avaliacoes  Avaliacao[]        @relation("UserAvaliacoes")
-  favoritos   ProdutoFavorito[]  @relation("UserFavoritos") // Correção
+  status           Boolean  @default(true)
+  tipo        String   @default("cliente")
 }
-
+  
 model Lojista {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   imagemLojista String?
@@ -60,46 +57,22 @@ model Lojista {
   descricao    String?
   status       Boolean  @default(true)
   tipo         String   @default("lojista")
-  seguidores     UserFollowLojista[] @relation("LojistaFollowers")
-  avaliacoes  Avaliacao[] @relation("LojistaAvaliacoes")
 }
 
-model Avaliacao {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  comentario   String
-  nota         Float
-  usuarioId    String
-  lojistaId    String
-  usuario      User     @relation("UserAvaliacoes", fields: [usuarioId], references: [id], onDelete: Cascade)
-  lojista      Lojista  @relation("LojistaAvaliacoes", fields: [lojistaId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-}
-
-model UserFollowLojista {
-  id        String  @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String  @db.ObjectId
-  lojistaId String  @db.ObjectId
-  user      User    @relation("UserFollows", fields: [userId], references: [id])
-  lojista   Lojista @relation("LojistaFollowers", fields: [lojistaId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@unique([userId, lojistaId]) // Define um índice único para userId e lojistaId
-}
 
 model Produto {
-  id            String             @id @default(auto()) @map("_id") @db.ObjectId
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
   nome          String
   preco         String?
   descricao     String?
   imagemProduto String?
-  idLojista     String             @db.ObjectId
-  lojista       Lojista            @relation("LojistaProdutos", fields: [idLojista], references: [id], onDelete: Cascade)
-  categoria     String?            // Categoria do produto
-  rating        Float?             // Avaliação média do produto
+  idLojista     String   @db.ObjectId
+  lojista       Lojista  @relation("LojistaProdutos", fields: [idLojista], references: [id], onDelete: Cascade)
+  categoria     String?  // Categoria do produto
+  rating        Float?   // Avaliação média do produto
   subcategoria  String?
   avaliacao     Float?
-  status        Boolean            @default(true) // Para controlar se o produto está ativo ou não
-  favoritos     ProdutoFavorito[]  @relation("ProdutoFavoritos") // Correção
+  status           Boolean  @default(true) // Para controlar se o produto está ativo ou não
   @@index([idLojista])
 }
 
@@ -115,17 +88,8 @@ model Validacao {
   estado       String?
   numContato   String?
   numEstab     String?
+  categoria    String? 
+  descricao    String?
   email        String   @unique
   senha        String
-}
-
-model ProdutoFavorito {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  produtoId   String   @db.ObjectId
-  usuario     User     @relation("UserFavoritos", fields: [userId], references: [id], onDelete: Cascade)
-  produto     Produto  @relation("ProdutoFavoritos", fields: [produtoId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now()) // Data de quando o produto foi marcado como favorito
-
-  @@index([userId, produtoId], map: "idx_user_produto") // Índice único opcional para evitar duplicatas
 }
