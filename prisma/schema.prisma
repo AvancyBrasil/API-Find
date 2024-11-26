@@ -115,6 +115,8 @@ model Validacao {
   estado       String?
   numContato   String?
   numEstab     String?
+  descricao String?
+  categoria String?
   email        String   @unique
   senha        String
 }
