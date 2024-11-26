@@ -351,7 +351,6 @@ app.post('/lojistas', upload.single('imagemLojista'), async (req, res) => {
 
 
 // Rota para listar lojistas
-
 app.get('/lojistas', async (req, res) => {
   const { id, nome, email, categoria, latitude, longitude } = req.query;
 
@@ -1082,6 +1081,8 @@ app.post('/validacao', async (req, res) => {
         estado,
         numEstab,
         numContato,
+        categoria,
+        descricao,
         email,
         senha,
       }
