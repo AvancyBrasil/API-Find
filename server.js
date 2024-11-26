@@ -176,6 +176,20 @@ app.put('/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
     }
   });
 
+app.delete('/usuarios/:id', async (req, res) => {
+  try {
+    await prisma.user.delete({
+      where: {
+        id: req.params.id
+      }
+    });
+    res.status(200).json({ message: "Usuario deletado com sucesso!" });
+  } catch (error) {
+    console.error('Erro ao deletar Usuario:', error);
+    res.status(500).json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+  }
+});
+
 
  app.delete('/usuarios/:id', async (req, res) => {
 
