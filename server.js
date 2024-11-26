@@ -1058,7 +1058,7 @@ app.get('/validacao', async (req, res) => {
 
 
 app.post('/validacao', async (req, res) => {
-  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato,catrgoria,descricao, email, senha } = req.body;
+  const { nome, sobrenome, cpf, dataNasc, nomeEmpresa, cnpj, cep, logradouro, cidade, estado, numEstab, complemento, numContato,categoria,descricao, email, senha } = req.body;
 
   try {
     const existingLojista = await prisma.validacao.findUnique({
@@ -1082,7 +1082,7 @@ app.post('/validacao', async (req, res) => {
         estado,
         numEstab,
         numContato,
-        catrgoria,
+        categoria,
         descricao,
         email,
         senha,
