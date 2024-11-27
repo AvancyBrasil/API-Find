@@ -191,18 +191,6 @@ app.delete('/usuarios/:id', async (req, res) => {
 });
 
 
- app.delete('/usuarios/:id', async (req, res) => {
-
-   await prisma.user.delete({
-
-      where:{
-         id: req.params.id
-      }
-   })
-   res.status(200).json({message: "Usuarios deletado com sucesso!!"})
- })
-
-
 app.post('/login/usuarios', async (req, res) => {
   const { email, senha, status} = req.body;
   console.log('Tentativa de login com:', { email, senha });
